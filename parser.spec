@@ -8,7 +8,7 @@ a = Analysis(
     ['parser.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('config.ini', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -41,5 +41,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['C:\\Users\\lodki\\WebPageParser\\mantis_logo.ico'],
+    icon=['mantis_logo.ico'],
 )

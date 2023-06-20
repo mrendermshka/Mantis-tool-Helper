@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import simpledialog, Listbox, Button, messagebox, ttk
 from requests import Session
 from fake_useragent import UserAgent
 from re import search
@@ -14,10 +14,14 @@ import subprocess
 import html
 import sys
 
+import configparser
+from tkinter import simpledialog, Listbox, Button, messagebox
+
 session = Session()
 
 INI_FILE_PATH = path.join(user_data_dir(), "credentials.ini")
 INI_SECTION = "Credentials"
+
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -26,6 +30,7 @@ def resource_path(relative_path):
     else:
         base_path = getcwd()
     return path.join(base_path, relative_path)
+
 
 def load_credentials():
     if path.exists(INI_FILE_PATH):
@@ -178,6 +183,8 @@ def update_app_version():
             config.write(config_file)
     except:
         print("git didn't found")
+
+
 def copy_version():
     version = get_app_version()
     version = f"Mantis Helper v{version}"
@@ -191,7 +198,15 @@ version = get_app_version()
 # Create the main window
 window = tk.Tk()
 window.title(f"Mantis Helper v{version}")
-window.geometry("650x620")
+# Calculate the screen width and height
+screen_width = window.winfo_screenwidth()
+screen_height = window.winfo_screenheight()
+# Calculate the x and y coordinates for the centered position
+x = (screen_width - 650) // 2  # Adjust the form width as needed
+y = (screen_height - 620) // 2  # Adjust the form height as needed
+
+# Set the form geometry to be centered on the screen
+window.geometry(f"650x620+{x}+{y}")
 
 # Create the menu
 menu_bar = tk.Menu(window)
@@ -200,13 +215,110 @@ window.config(menu=menu_bar)
 # Create the File menu
 file_menu = tk.Menu(menu_bar, tearoff=0)
 file_menu.add_command(label="Exit", command=window.quit)
+
+
+def manage_servers():
+    # Create a new window
+    servers_window = tk.Toplevel(window)
+    servers_window.title("Manage Servers")
+    # Calculate the screen width and height
+    screen_width = servers_window.winfo_screenwidth()
+    screen_height = servers_window.winfo_screenheight()
+    # Calculate the x and y coordinates for the centered position
+    x = (screen_width - 300) // 2  # Adjust the form width as needed
+    y = (screen_height - 200) // 2  # Adjust the form height as needed
+    servers_window.geometry(f"320x300+{x}+{y}")
+
+    # Create a frame to hold the servers listbox
+    servers_frame = tk.Frame(servers_window)
+    servers_frame.pack(fill=tk.BOTH, expand=True)
+
+    # Create the servers listbox
+    servers_listbox = Listbox(servers_frame)
+    servers_listbox.pack(fill=tk.BOTH, expand=True)
+
+    # Populate the listbox with values from config.ini
+    servers = get_servers_from_config(server_combobox)
+    for server in servers:
+        servers_listbox.insert(tk.END, server)
+
+    # Create buttons for adding and deleting servers
+    buttons_frame = tk.Frame(servers_window)
+    buttons_frame.pack()
+
+    add_button = Button(buttons_frame, text="Add Server", command=lambda: add_server(servers_listbox))
+    add_button.pack(side=tk.LEFT)
+
+    delete_button = Button(buttons_frame, text="Delete Server", command=lambda: delete_server(servers_listbox))
+    delete_button.pack(side=tk.LEFT)
+
+
+def add_server(servers_listbox):
+    # Відкрити просте вікно запиту для введення URL сервера
+    server_url = simpledialog.askstring("Add Server", "Enter server URL:")
+    if server_url:
+        # Додати сервер до списку та зберегти у config.ini
+        servers_listbox.insert(tk.END, server_url)
+        save_servers_to_config(servers_listbox)
+        if server_combobox:
+            get_servers_from_config(server_combobox)
+
+
+def delete_server(servers_listbox):
+    # Отримати вибраний сервер зі списку
+    selected_index = servers_listbox.curselection()
+    if selected_index:
+        selected_server = servers_listbox.get(selected_index)
+
+        # Підтвердити видалення сервера за допомогою спливаючого вікна підтвердження
+        confirmation = messagebox.askyesno("Delete Server", f"Are you sure you want to delete {selected_server}?")
+        if confirmation:
+            # Видалити сервер зі списку та зберегти у config.ini
+            servers_listbox.delete(selected_index)
+            save_servers_to_config(servers_listbox)
+            get_servers_from_config(server_combobox)
+
+
+def get_servers_from_config(server_combobox):
+    config = configparser.ConfigParser()
+    config.read("config.ini")
+    if "Servers" in config:
+        servers = config["Servers"]
+        server_combobox.config(values=list(servers.values()))
+        if len(list(servers.values())) > 0:
+            server_combobox.current(0)
+        return list(servers.values())
+    else:
+        return []
+
+
+def save_servers_to_config(servers_listbox):
+    config = configparser.ConfigParser()
+    config["Servers"] = {}
+    servers = servers_listbox.get(0, tk.END)
+    for i, server in enumerate(servers):
+        config["Servers"][f"Server{i + 1}"] = server
+
+    with open("config.ini", "w") as config_file:
+        config.write(config_file)
+
+
+def on_closing():
+    if messagebox.askokcancel("Quit", "Do you want to quit?"):
+        window.destroy()
+
+
+def clear_treeview():
+    output_table.delete(*output_table.get_children())
+
+
 menu_bar.add_cascade(label="File", menu=file_menu)
+file_menu.add_command(label="Servers", command=manage_servers)
 
 # Create the Version menu
 version_menu = tk.Menu(menu_bar, tearoff=0)
 version_menu.add_command(label="Copy Version", command=copy_version)
 menu_bar.add_cascade(label="Version", menu=version_menu)
-
 
 # Update the app version
 update_app_version()
@@ -241,6 +353,7 @@ login_button.grid(row=0, column=4, padx=5, pady=5)
 # Create the login status label
 login_status_label = tk.Label(window, text="")
 login_status_label.pack(pady=10)
+login_status_label.configure(text="Please enter username and password or press login button", fg="purple")
 
 # Create the search table
 search_table = ttk.Frame(window, padding=10)
@@ -270,13 +383,11 @@ style.configure("Treeview", font=("Arial", 12))
 style.configure("Treeview.Heading", font=("Arial", 12, "bold"))
 
 # Create the server selection combobox
-server_combobox = ttk.Combobox(window, values=["https://bugtracker.boening.com/login.php",
-                                               "https://mantis-extern.boening.com/login.php",
-                                               "https://pr20.boening.com/login.php"],
-                               state="readonly")
-server_combobox.current(1)
+server_combobox = ttk.Combobox(window, state="readonly")
+get_servers_from_config(server_combobox)
 server_combobox.bind("<<ComboboxSelected>>", on_server_select)
-server_combobox.pack(padx=5, pady=5)
+server_combobox.config(width=100)  # Adjust the width as needed
+server_combobox.pack(padx=1, pady=1)
 
 # Create the export button
 export_button = tk.Button(window, text="Export as Excel", fg="blue", bd=1, relief="solid", borderwidth=1,
@@ -287,6 +398,13 @@ copy_button = tk.Button(window, text="Copy to Clipboard", fg="purple", bd=1, rel
                         activebackground="purple", activeforeground="white", command=copy_to_clipboard)
 copy_button.pack(side="left", padx=5, pady=5)
 
+clear_button = tk.Button(window, text="Clear History", fg="blue", bd=1, relief="solid", borderwidth=1,
+                         activebackground="yellow", command=clear_treeview)
+clear_button.pack(side="left", padx=5, pady=5)
+
 window.protocol("WM_DELETE_WINDOW", save_credentials_on_exit)
+
+window.protocol("WM_DELETE_WINDOW", on_closing)
+
 # Start the Tkinter event loop
 window.mainloop()
