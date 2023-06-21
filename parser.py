@@ -9,7 +9,7 @@ from win10toast import ToastNotifier
 from tkinter.filedialog import asksaveasfilename
 from configparser import ConfigParser
 from appdirs import user_data_dir
-from os import path, getcwd
+from os import path, getcwd, makedirs
 import subprocess
 import html
 import sys
@@ -19,9 +19,26 @@ from tkinter import simpledialog, Listbox, Button, messagebox
 
 session = Session()
 
-INI_FILE_PATH = path.join(user_data_dir(), "credentials.ini")
+INI_FILE_PATH = path.join(user_data_dir()+"/Mantis Helper/", "credentials.ini")
+INI_CONFIG_FILE = path.join(user_data_dir()+"/Mantis Helper/", "config.ini")
 INI_SECTION = "Credentials"
+if not path.exists(user_data_dir()+"/Mantis Helper/"):
+    makedirs(user_data_dir()+"/Mantis Helper/")
+def encrypt_message(message, key):
+    encrypted_message = ""
+    for char in message:
+        encrypted_char = chr(ord(char) ^ key)
+        encrypted_message += encrypted_char
+    return encrypted_message
 
+def decrypt_message(encrypted_message, key):
+    decrypted_message = ""
+    for char in encrypted_message:
+        decrypted_char = chr(ord(char) ^ key)
+        decrypted_message += decrypted_char
+    return decrypted_message
+
+key = 42
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -38,48 +55,65 @@ def load_credentials():
         config.read(INI_FILE_PATH)
         if INI_SECTION in config:
             username = config[INI_SECTION].get("username", "")
-            password = config[INI_SECTION].get("password", "")
+            password = decrypt_message(config[INI_SECTION].get("password", ""), key)
             entry_username.insert(0, username)
             entry_password.insert(0, password)
 
 
-def login():
-    username = entry_username.get()
-    password = entry_password.get()
-    global session
-    session = Session()
-    if username and password:
-        selected_server = server_combobox.get()
-        link_auth = selected_server
-        user = UserAgent().random
-        headers = {
-            "user-agent": user
-        }
-        data = {
-            "username": username,
-            "password": password
-        }
-        response = session.post(link_auth, data=data, headers=headers).text
-        if "Logout" in response:
-            login_status_label.configure(text="Logged in successfully!", fg="green")
-            # Save credentials to INI file
-            config = ConfigParser()
-            config[INI_SECTION] = {"username": username, "password": password}
-            with open(INI_FILE_PATH, "w") as config_file:
-                config.write(config_file)
-        else:
-            pattern = r'<div class="alert alert-danger"><p>(.*?)<\/p><\/div>'
-            category_match = search(pattern, response)
-            login_status_label.configure(text=category_match.group(1), fg="red")
-    else:
-        login_status_label.configure(text="Please enter username and password", fg="purple")
+def setup_auth_link(link):
+    if link[len(link) - 1] != "/":
+        link += "/"
+    link += "login.php"
+    return link
 
+
+def setup_search_link(link):
+    if link[len(link) - 1] != "/":
+        link += "/"
+    link += "view.php?id="
+    return link
+
+
+def login():
+    try:
+        username = entry_username.get()
+        password = entry_password.get()
+        global session
+        session = Session()
+        if username and password:
+            selected_server = server_combobox.get()
+            link_auth = selected_server
+            user = UserAgent().random
+            headers = {
+                "user-agent": user
+            }
+            data = {
+                "username": username,
+                "password": password
+            }
+            link_auth = setup_auth_link(link_auth)
+            response = session.post(link_auth, data=data, headers=headers).text
+            if "Logout" in response:
+                login_status_label.configure(text="Logged in successfully!", fg="green")
+                # Save credentials to INI file
+                config = ConfigParser()
+                config[INI_SECTION] = {"username": username, "password": encrypt_message(password, key)}
+                with open(INI_FILE_PATH, "w") as config_file:
+                    config.write(config_file)
+            else:
+                pattern = r'<div class="alert alert-danger"><p>(.*?)<\/p><\/div>'
+                category_match = search(pattern, response)
+                login_status_label.configure(text=category_match.group(1), fg="red")
+        else:
+            login_status_label.configure(text="Please enter username and password", fg="purple")
+    except Exception as error:
+        login_status_label.configure(text=str(error) , fg="purple")
 
 def search_and_copy():
     issue_id = entry_issue_id.get()
-
+    selected_server = server_combobox.get()
     if issue_id:
-        issue_summary = f"https://mantis-extern.boening.com/view.php?id={issue_id}"
+        issue_summary = setup_search_link(selected_server) + f"{issue_id}"
         issue_response = session.get(issue_summary).text
 
         pattern = r'<td class="bug-summary" colspan="5">(.*?)<\/td>'
@@ -145,7 +179,7 @@ def save_credentials_on_exit():
     password = entry_password.get()
     if username and password:
         config = ConfigParser()
-        config[INI_SECTION] = {"username": username, "password": password}
+        config[INI_SECTION] = {"username": username, "password": encrypt_message(password)}
         with open(INI_FILE_PATH, "w") as config_file:
             config.write(config_file)
 
@@ -153,7 +187,7 @@ def save_credentials_on_exit():
 # Функція для отримання значення версії з файлу конфігурації
 def get_app_version():
     config = ConfigParser()
-    config.read(resource_path("config.ini"))
+    config.read(resource_path(INI_CONFIG_FILE))
     version = config.get("App", "version", fallback="Unknown")
     return version
 
@@ -170,7 +204,7 @@ def get_git_commit_count():
 def update_app_version():
     try:
         config = ConfigParser()
-        config.read(resource_path("config.ini"))
+        config.read(resource_path(INI_CONFIG_FILE))
         if not config.has_section("App"):
             config.add_section("App")
         version = 0
@@ -179,7 +213,7 @@ def update_app_version():
             version = f"1.0.{str(git_commit_count)}"
 
         config.set("App", "version", version)
-        with open("config.ini", "w") as config_file:
+        with open(INI_CONFIG_FILE, "w") as config_file:
             config.write(config_file)
     except:
         print("git didn't found")
@@ -281,7 +315,7 @@ def delete_server(servers_listbox):
 
 def get_servers_from_config(server_combobox):
     config = configparser.ConfigParser()
-    config.read("config.ini")
+    config.read(INI_CONFIG_FILE)
     if "Servers" in config:
         servers = config["Servers"]
         server_combobox.config(values=list(servers.values()))
@@ -299,7 +333,7 @@ def save_servers_to_config(servers_listbox):
     for i, server in enumerate(servers):
         config["Servers"][f"Server{i + 1}"] = server
 
-    with open("config.ini", "w") as config_file:
+    with open(INI_CONFIG_FILE, "w") as config_file:
         config.write(config_file)
 
 
@@ -384,7 +418,9 @@ style.configure("Treeview.Heading", font=("Arial", 12, "bold"))
 
 # Create the server selection combobox
 server_combobox = ttk.Combobox(window, state="readonly")
-get_servers_from_config(server_combobox)
+amount = get_servers_from_config(server_combobox)
+if len(amount) > 0:
+    login()
 server_combobox.bind("<<ComboboxSelected>>", on_server_select)
 server_combobox.config(width=100)  # Adjust the width as needed
 server_combobox.pack(padx=1, pady=1)
