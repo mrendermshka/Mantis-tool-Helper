@@ -137,13 +137,13 @@ def search_and_copy():
         else:
             issue_project = "Project not found"
 
-        issue = f"{issue_project}\t{issue_category}\t{issue_summary}"
+        issue = f"{issue_summary}\t{issue_project}\t{issue_category}"
         copy(issue)
         # Display notification
         toaster = ToastNotifier()
         toaster.show_toast("Clipboard Notification", issue, duration=5, threaded=True)
 
-        output_table.insert("", "end", values=(issue_project, issue_category, issue_summary))
+        output_table.insert("", "end", values=(issue_summary, issue_project, issue_category))
     else:
         toaster = ToastNotifier()
         toaster.show_toast("Error", "Please enter issue ID", duration=5, threaded=True)
